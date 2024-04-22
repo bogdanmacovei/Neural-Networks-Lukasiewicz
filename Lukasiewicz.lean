@@ -4,6 +4,7 @@ section Lukasiewicz
     inductive Set (α : Type) where 
     | nil : Set α 
     | cons : α → Set α → Set α 
+    deriving Repr 
 
     def Set.mem {α : Type} (a : α) : Set α → Prop 
     | Set.nil => false 
@@ -22,7 +23,7 @@ section Lukasiewicz
       intro h 
       trivial 
 
-    notation "[]" => Set.nil 
+    notation "∅₁" => Set.nil 
     notation x "::" xs => Set.cons x xs  
 
     def Set.append {α : Type} : Set α → Set α → Set α := fun l₁ ys => 
@@ -89,18 +90,93 @@ section Lukasiewicz
 
     def Vector (α : Type) (n : Nat) := Fin n → α 
     def Matrix (α : Type) (m n : Nat) := Fin m → Vector α n 
+
+    def list2vector {α : Type} (l : List α) (n : Nat) (h : n = l.length) : Vector α n := 
+      fun i : Fin n => 
+      match i with 
+      | ⟨i, hi⟩ => l.get ⟨i, by {
+        apply Nat.lt_of_lt_of_le hi 
+        exact Nat.le_of_eq (by exact h)
+      }⟩ 
+
+    def list2matrix {α : Type} (ll : List (List α)) (m n : Nat) (h : m = ll.length) : Matrix α m n :=
+      fun i => list2vector (ll.get ⟨i.val, by {
+        apply Nat.lt_of_lt_of_le i.isLt
+        exact Nat.le_of_eq (by exact h)
+      }⟩) n (by {
+        -- Proof that each sublist has length n needs to be provided or assumed
+        sorry
+      })
+
+
+      
+    -- def index {α : Type} (v : Vector α n) (i : Nat) : Option α := 
+    --   if h : i < n then 
+    --     some $ v ⟨i, h⟩ 
+    --   else 
+    --     none 
+
+      def index {α : Type} (v : Vector α n) (i : Nat) : α := v ⟨i, by sorry ⟩
+
+
+    -- class DefaultType (α : outParam Type) where 
+    --   default : α 
     
-    def index (v : Vector α n) (i : Nat) --(h : i < n) 
-      := v ⟨ i, by sorry ⟩ 
+    -- instance : DefaultType Int where 
+    --   default := 0
+
+    -- instance : DefaultType Float where 
+    --   default := 0 
+
+    -- instance : DefaultType Nat where 
+    --   default := 0 
+
+    -- #check List 
+
+    -- theorem range_n_has_length_n (n : Nat) : n = length (range n) := by 
+    --   induction n 
+    --   case zero => rfl 
+    --   case succ n ih => 
+    --     rw [List.range, ih]
+    --     sorry 
+
+    -- def defaultVector {α : Type} [DefaultType α] (n : Nat) : Vector α n := 
+    --   list2vector (map (fun _ => DefaultType.default) (range n)) n (by 
+    --     simp [*]
+    --     exact range_n_has_length_n n 
+    --   ) 
+
+    -- instance (α : Type) (n : Nat) [DefaultType α] : DefaultType $ Vector α n where 
+    --   default := defaultVector n 
+
+    -- def fromOption {α : Type} (option : Option α) : α := 
+    --   match option with 
+    --   | some value => value 
+    --   | none => DefaultType.default 
 
     notation v " [ " i " ] " => index v i 
+
+    def vector2list {α : Type} {n : Nat} (v : Vector α n) : List α := 
+      map (fun i => v [i]) (range n)
+
+    instance {α : Type} [Repr α] {n : Nat} : Repr (Vector α n) where 
+      reprPrec v _ := 
+        let elems := vector2list v 
+        "Vector " ++ repr elems 
+
+    def matrix2list {α : Type} {n m : Nat} (m : Matrix α n m) : List $ List α := 
+      map (fun i => vector2list $ m [i]) (range n)
+
+    instance {α : Type} [Repr α] {n m : Nat} : Repr (Matrix α n m) where 
+      reprPrec m _ := 
+        let elems := matrix2list m 
+        "Matrix " ++ repr elems 
 
     def elementwiseDiff { α : Type } [HSub α α α] [HAdd α α α] [OfNat α 0]
       (v₁ : Vector α n) (v₂ : Vector α n) : Vector α n := fun i => v₁ [i] - v₂ [i] 
 
     notation v₁ " -V " v₂ => elementwiseDiff v₁ v₂ 
 
-     
     def dot_product { α : Type } [HMul α α α] [HAdd α α α] [OfNat α 0] 
       (v w : Vector α n) : α := 
       foldr (fun x y => x + y) 0 $ 
@@ -199,60 +275,93 @@ section Lukasiewicz
 
     def layer_activation {α : Type} [HAdd α α α] [HMul α α α] [OfNat α 0]
       (input_lines neuronsCurrent neuronsNew : Nat)
-      (Q : Matrix α input_lines neuronsCurrent)
+      (H : Matrix α input_lines neuronsCurrent)
       (W : Matrix α neuronsNew neuronsCurrent) 
       (f : α → Float)
       : Matrix Float input_lines neuronsNew := 
-        f <$>M (Q ×M T(W)) 
-
-    def RMSE (input_lines : Nat)
-      (test_values : Vector Float input_lines)
-      (predicted_values : Vector Float input_lines)
-      : Float := 
-        (1 / input_lines.toFloat) 
-        * (foldr (fun x y => x + y) 0 
-          $ map (fun i => (test_values [i] - predicted_values [i]) ^ 2) (range input_lines)) 
+        f <$>M (H ×M T(W)) 
 
     def ForwardPropagation 
-      (Q : Matrix Float input_lines input_size) 
+      (H : Matrix Float input_lines input_size) 
       (W : Matrix Float output_size input_size) 
       (f : Float → Float) : Matrix Float input_lines output_size :=
-      layer_activation input_lines input_size output_size Q W f
+      layer_activation input_lines input_size output_size H W f
 
     def BackwardPropagation 
-      (Q : Matrix Float input_lines input_size) 
+      (H : Matrix Float input_lines input_size) 
       (W : Matrix Float output_size input_size) 
       (f' : Float → Float) : Matrix Float input_size output_size :=
       let delta := (fun z => z * f' z) 
-        <$>M (layer_activation input_lines input_size output_size Q W f')
-      let grad_W := (fun x => 1 / input_lines.toFloat * x) <$>M (T(Q) ×M delta)
+        <$>M (layer_activation input_lines input_size output_size H W f')
+      let grad_W := (fun x => 1 / input_lines.toFloat * x) <$>M (T(H) ×M delta)
       grad_W
 
   end MultiLayerPerceptron
 
+  section Example3
+      def test_input_layer : Matrix Float 2 1 := fun i => match i with
+        | ⟨0, _⟩ => fun j => match j with 
+          | ⟨0, _⟩ => 0.35 
+        | ⟨1, _⟩ => fun j => match j with 
+          | ⟨0, _⟩ => 0.7
+
+      def weights : Matrix Float 2 2 := fun i => match i with 
+        | ⟨0, _⟩ => fun j => match j with 
+          | ⟨0, _⟩ => 0.2 | ⟨1, _⟩ => 0.2 
+        | ⟨1, _⟩ => fun j => match j with 
+          | ⟨0, _⟩ => 0.3 | ⟨1, _⟩ => 0.3
+
+      #eval (T(test_input_layer) ×M T(weights)) 
+      #eval (ForwardPropagation T(test_input_layer) weights (fun x => min 1 $ max 0 x)) 
+    end Example3 
+
   section ManySortedHybridLogic 
+
+    def σ : Nat := 100 
 
     inductive sort (σ : Nat)
     | atom : Fin σ → sort σ 
+    deriving Repr 
 
-    notation "#s" s => sort.atom s 
+    def showSort {σ : Nat} (s : sort σ) : String := 
+      match s with 
+      | sort.atom x => "sort " ++ (toString x)
+
+    notation "#s" s => sort.atom (s : Fin 100) 
 
     inductive nominal (σ : Nat)
     | atom : Fin σ → nominal σ 
     | nominal : Float → nominal σ 
+    deriving Repr
 
-    notation "#n" x => nominal.atom x 
-    notation "#γ" r => nominal.nominal r 
+    def showNominal {σ : Nat} (n : nominal σ) : String := 
+      match n with 
+      | nominal.atom n => "nominal " ++ (toString n) 
+      | nominal.nominal r => "γ" ++ toString r 
+
+    notation "#n" x => nominal.atom (x : Fin 100) 
+    notation "#γ" r => ((nominal.nominal r) : nominal 100) 
 
     inductive action (σ : Nat)
     | atom : Fin σ → action σ 
-    | train : Vector Float n → Float → action σ
-    | update : Float → List (Vector Float n) → action σ  
-    | stop : List (Vector Float n) → action σ 
+    | train : Matrix Float n m → Float → action σ
+    | update : Float → Vector (Matrix Float n m) k → Vector Float k → action σ  
+    | stop : Vector (Matrix Float n m) k → Vector Float k → action σ 
     | seq : action σ → action σ → action σ 
+    deriving Repr 
 
-    notation "#a" a => action.atom a 
+    def showAction {σ : Nat} (α : action σ) : String := 
+      match α with 
+      | action.atom a => "action " ++ (toString a) 
+      | action.train W b => "train" 
+      | action.update η W b => "update " ++ (toString η)
+      | action.stop W b => "stop" 
+      | action.seq α β => (showAction α) ++ (" ; " ++ (showAction β))
+
+
+    notation "#a" a => action.atom (a : Fin 100) 
     notation α " ; " β => action.seq α β 
+
 
     inductive form (σ : Nat) : Type where 
     | atom : Fin σ → form σ 
@@ -264,9 +373,25 @@ section Lukasiewicz
     | nom : nominal σ → form σ → form σ 
     | diam : nominal σ → form σ → form σ 
     | program : action σ → form σ → form σ 
+    | program_memory : action σ → form σ → form σ → form σ 
     | list : List (form σ) → form σ 
+    deriving Repr 
 
-    notation " # " p => form.atom p
+    def showForm {σ : Nat} (φ : form σ) : String := 
+      match φ with 
+      | form.atom p => "(#" ++ ((toString p) ++ ")")
+      | form.nomToForm nom => "(" ++ (showNominal nom ++ ")")
+      | form.neg φ => "(¬L" ++ (showForm φ ++ ")")
+      | form.oplus φ ψ => "(" ++ ((showForm φ) ++ ("⊕" ++ ((showForm ψ) ++ ")")))
+      | form.sigma _ => ""
+      | form.hybrid nom sort ψ => "@" ++ ((showNominal nom) ++ ((showSort sort) ++ (showForm ψ)))
+      | form.nom nom φ => "(" ++ (showNominal nom ++ ((showForm φ) ++ ")"))
+      | form.diam nom ψ => "(◇" ++ (showNominal nom ++ (" " ++ (showForm ψ)))
+      | form.program _ _ => "" 
+      | form.program_memory _ _ _ => "" 
+      | form.list _ => "" 
+
+    notation " #p " p => form.atom (p : Fin 100)
     notation " ¬L " p => form.neg p 
     notation p " ⊕ " q => form.oplus p q 
 
@@ -278,10 +403,35 @@ section Lukasiewicz
     notation " @@ " j " , " s " : " φ => form.hybrid j s φ 
     notation " @@ " x " , " φ => form.nom x φ 
     notation " [ " α " ] " φ => form.program α φ 
+    notation " [ " α " ] ⟪ " ν " , " φ " ⟫ " => form.program_memory α ν φ 
 
     notation " zL " => (form.nomToForm $ #γ 0)
 
-    #check [(#a 1) ; (#a 2)]@@(#n 1),(#s 1):(¬L(#1) →L (#2))
+    def evalNominal (x : nominal σ) : Float := 
+      match x with 
+      | nominal.atom _ => 0 
+      | nominal.nominal f => f 
+    
+    def evalForm (φ : form σ) : Float :=
+      match φ with 
+      | form.atom _ => 0 
+      | form.nomToForm x => evalNominal x 
+      | form.neg ψ => 1 - evalForm ψ
+      | form.oplus ψ χ => min 1 $ (evalForm ψ) + (evalForm χ) 
+      | form.sigma _ => 0 
+      | form.hybrid _ _ _ => 0 
+      | form.nom n _ => evalNominal n
+      | form.diam n ψ => (evalNominal n) * (evalForm ψ) 
+      | form.program _ _ => 0
+      | form.program_memory _ _ _ => 0 
+      | form.list _ => 0 
+
+    def getSome (φ : Option $ form σ) : form σ := 
+      match φ with 
+      | some ψ => ψ 
+      | none => zL 
+
+    set_option trace.PrettyPrinter true 
 
     @[reducible]
     def ctx (σ : Nat) : Type := Set $ form σ 
@@ -291,24 +441,66 @@ section Lukasiewicz
     open DMV 
     open List 
 
-    def vector_product_list { σ : Nat } [Inhabited (form σ)] [OfNat (Fin σ) 0]
+    def vector_product_list [Inhabited (form σ)] [OfNat (Fin σ) 0]
       (n : Nat)
       (w : Vector Float n) 
       (lform : List (form σ)) : form σ := 
-      foldr (fun φ ψ => oplus φ ψ) (atom 0) $ map (fun i => ◇(#γ w [i]), lform.get! i) (range n)
+      foldr (fun φ ψ => oplus φ ψ) (#p 0) $ map (fun i => ◇(#γ w [i]), lform.get! i) (range n)
 
-    inductive Proof { σ : Nat } [Inhabited (form σ)] [Inhabited (nominal σ)] [OfNat (Fin σ) 0] : ctx σ → form σ → Prop 
+    def vector2 : Vector Float 2 := fun i => match i with
+      | ⟨0,_⟩ => 1 | ⟨1, _⟩ => 2
+
+    def compose_trains {n m k : Nat} (compositions : Nat) (W : Vector (Matrix Float n m) k) (b : Vector Float k) : action σ :=
+      match compositions with 
+      | 0 => train T(W [0]) (b [0])
+      | c + 1 => train T(W [c + 1]) (b [c + 1]) ; compose_trains c W b 
+
+    def neuron_activation_form { n m : Nat } (b : Float) (W : Matrix Float n m) (φ : form σ) (inputIndex : Nat) : form σ :=
+      nomToForm (#γ b) ⊕ foldr (fun φ ψ => φ ⊕ ψ) zL $ map (fun i => ◇(#γ (((matrix2list W).get! inputIndex).get! i)), φ) (range n)
+    
+    def layer_activation_form { n m : Nat } (b : Float) (W : Matrix Float n m) (lφ : List $ form σ) : List $ form σ :=
+      map (fun (φ, i) => neuron_activation_form b W φ i) $ zip lφ (range (lφ.length))
+
+    def network_training { n m k : Nat } (b : Vector Float k) (W : Vector (Matrix Float n m) k) (lφ : List $ form σ) : form σ := 
+      let rec layer_activation_form
+      (index : Nat) 
+      (current_form : form σ) : form σ := 
+      match index with
+      | 0 => current_form 
+      | l + 1 => 
+        let Wl : Matrix Float n m := W [l]
+        let bl : Float := b [l] 
+        let transformed_form : form σ := neuron_activation_form bl Wl current_form n 
+        layer_activation_form l (transformed_form) 
+        let initial_form : form σ := foldr (fun acc φ => φ ⊕ acc) zL lφ 
+        layer_activation_form k initial_form 
+
+    section SymbolicTraining
+      def inputs : List $ form σ := [nomToForm $ #γ 0.2, nomToForm $ #γ 0.3]
+      def w1 : List $ List Float := [[0.1, 0.2], [0.13, 0.03], [0.11, 0.1]]
+      def w2 : List $ List Float := [[0.3, 0.67, 0.15]]
+      def b : List $ Float := [0.08, 0.18]
+      
+      def w1_matrix : Matrix Float 3 2 := list2matrix w1 3 2 (by rfl)
+      def w2_matrix : Matrix Float 1 3 := list2matrix w2 1 3 (by rfl)
+      def b_vector : Vector Float 2 := list2vector b 2 (by rfl) 
+
+      def layer_1 : List $ form σ := layer_activation_form (b.get! 0) w1_matrix inputs 
+      def layer_2 : List $ form σ := layer_activation_form (b.get! 1) w2_matrix layer_1 
+
+      def predicted : form σ := getSome (layer_2.get? 0)
+
+      #eval predicted 
+      #eval showForm predicted
+      #eval evalForm predicted  
+    end SymbolicTraining
+ 
+
+    def dL (x y : form σ) : form σ := (x ⊙ (¬L y)) ⊕ (y ⊙ (¬L x))
+
+
+    inductive Proof [Inhabited (form σ)] [Inhabited (nominal σ)] [OfNat (Fin σ) 0] : ctx σ → form σ → Prop 
     | ax { Γ } { p : form σ } (h : p ∈₁ Γ) : Proof Γ p 
-    | Ka { Γ } { φ ψ : form σ } { j : nominal σ } { s : sort σ } (h : Proof Γ $ @@j,s:(φ →L ψ))
-        : Proof Γ $ @@j,s:φ →L @@j,s:ψ
-    | SelfDual₁ { Γ } { φ : form σ } { j : nominal σ } { s : sort σ } (h : Proof Γ $ @@j,s:φ)
-        : Proof Γ $ ¬L@@j,s:(¬Lφ)
-    | SelfDual₂ { Γ } { φ : form σ } { j : nominal σ } { s : sort σ } (h : Proof Γ $ ¬L@@j,s:(¬Lφ))
-        : Proof Γ $ @@j,s:φ
-    | Agree₁ { Γ } { φ : form σ } { k j : nominal σ } { t t' : sort σ } (h : Proof Γ $ @@k,t:(@@j,t':φ))
-        : Proof Γ $ @@j,t:φ 
-    | Agree₂ { Γ } { φ : form σ } { k j : nominal σ } { t t' : sort σ } (h : Proof Γ $ @@j,t:φ)
-        : Proof Γ $ @@k,t:(@@j,t':φ)
     | NOM₁₁ { Γ } { r : Float } { DMV : DMV Float} (h : Proof Γ $ nomToForm (#γ (DMV.neg r))) 
         : Proof Γ $ ¬L (nomToForm (#γ r))
     | NOM₁₂ { Γ } { r : Float } { DMV : DMV Float} (h : Proof Γ $ ¬L (nomToForm (#γ r))) 
@@ -321,107 +513,122 @@ section Lukasiewicz
         : Proof Γ $ ◇(#γ r), (nomToForm $ #γ q)
     | NOM₃₂ { Γ } { r q : Float } { DMV : DMV Float } (h : Proof Γ $ ◇(#γ r), (nomToForm $ #γ q))
         : Proof Γ $ nomToForm (#γ (DMV.mul r q))
-    | MG₁₁ { Γ } { φ ψ χ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(φ ⊕ (ψ ⊕ χ)))
+    | M₁₁ { Γ } { φ ψ χ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(φ ⊕ (ψ ⊕ χ)))
         : Proof Γ $ @@x,(φ ⊕ (ψ ⊕ χ))
-    | MG₁₂ { Γ } { φ ψ χ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(φ ⊕ (ψ ⊕ χ)))
+    | M₁₂ { Γ } { φ ψ χ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(φ ⊕ (ψ ⊕ χ)))
         : Proof Γ $ @@x,(φ ⊕ (ψ ⊕ χ))
-    | MG₂₁ { Γ } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(φ ⊕ ψ))
+    | M₂₁ { Γ } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(φ ⊕ ψ))
         : Proof Γ $ @@x,(ψ ⊕ φ)
-    | MG₂₂ { Γ } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(ψ ⊕ φ))
+    | M₂₂ { Γ } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(ψ ⊕ φ))
         : Proof Γ $ @@x,(φ ⊕ ψ)
-    | MG₃ { Γ } { φ : form σ } : Proof Γ $ @@(#γ 0),φ
-    | MV₁₁ { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(¬L (¬L φ))) 
+    | M₃ { Γ } { φ : form σ } : Proof Γ $ @@(#γ 0),φ
+    | M₄₁ { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(¬L (¬L φ))) 
         : Proof Γ $ @@x,φ 
-    | MV₁₂ { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,φ )
+    | M₄₂ { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,φ )
         : Proof Γ $ @@x,(¬L (¬L φ))
-    | MV₂₁ { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,((¬L zL) ⊕ φ))
+    | M₅₁ { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,((¬L zL) ⊕ φ))
         : Proof Γ $ @@x, (¬L zL)
-    | MV₂₂ { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x, (¬L zL))
+    | M₅₂ { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x, (¬L zL))
         : Proof Γ $ @@x,((¬L zL) ⊕ φ)
-    | MV₃₁ { Γ } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x, (¬L((¬L φ) ⊕ ψ)) ⊕ ψ) 
+    | M₆₁ { Γ } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x, (¬L((¬L φ) ⊕ ψ)) ⊕ ψ) 
         : Proof Γ $ @@x, (¬L((¬L ψ) ⊕ φ)) ⊕ φ 
-    | MV₃₂ { Γ } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x, (¬L((¬L ψ) ⊕ φ)) ⊕ φ ) 
+    | M₆₂ { Γ } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x, (¬L((¬L ψ) ⊕ φ)) ⊕ φ ) 
         : Proof Γ $ @@x, (¬L((¬L φ) ⊕ ψ)) ⊕ ψ
     | R₁₁ { Γ } { r : Float } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,◇(#γ r), (φ ⊙ (¬L ψ)))
         : Proof Γ $ @@x,((◇(#γ r),φ) ⊙ (¬L (◇(#γ r),ψ)))
     | R₂₁ { Γ } { r : Float } { φ ψ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,((◇(#γ r),φ) ⊙ (¬L (◇(#γ r),ψ))))
         : Proof Γ $  @@x,◇(#γ r), (φ ⊙ (¬L ψ))
-    | N₀₁ { Γ } { ν : form σ } { α β : action σ } (h : Proof Γ $ [α ; β]ν) : Proof Γ $ [α][β]ν 
-    | N₀₂ { Γ } { ν : form σ } { α β : action σ } (h : Proof Γ $ [α][β]ν) : Proof Γ $ [α ; β]ν
-    | N₁ { Γ } { n : Nat } { w : Vector Float n } { b : Float } {DMV : DMV Float} 
+    | R₃₁ { Γ } { r q : Float } { x : nominal σ } { φ : form σ } (h : Proof Γ $ @@x, (◇ (#γ r), (◇ (#γ q), φ) ))
+        : Proof Γ $ @@x, ◇ (#γ (r * q)), φ 
+    | R₃₂ { Γ } { r q : Float } { x : nominal σ } { φ : form σ } (h : Proof Γ $ @@x, ◇ (#γ (r * q)), φ)
+        : Proof Γ $ @@x, (◇ (#γ r), (◇ (#γ q), φ) )
+    | R₄₁ { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,(◇(#γ 1), φ))
+        : Proof Γ $ @@x,φ
+    | R₄₂  { Γ } { φ : form σ } { x : nominal σ } (h : Proof Γ $ @@x,φ)
+        : Proof Γ $ @@x,(◇(#γ 1), φ)
+    | MP { Γ } { φ ψ : form σ } (hφ : Proof Γ φ) (hφψ : Proof Γ $ φ →L ψ) : Proof Γ $ ψ 
+    | N₀₁ { Γ } { ν : form σ } { α β : action σ } (h : Proof Γ $ [α ; β]ν) : Proof Γ $ [β][α]ν 
+    | N₀₂ { Γ } { ν : form σ } { α β : action σ } (h : Proof Γ $ [β][α]ν) : Proof Γ $ [α ; β]ν
+    | N₁ { Γ } { n : Nat } { W : Matrix Float n m } { b : Float } {DMV : DMV Float} 
       { lφ : List $ form σ } 
-      (h : Proof Γ $ [train w b] (list lφ)) 
-        : Proof Γ $ list (map (fun _ => nomToForm (#γ b) ⊕ (vector_product_list n w lφ)) (range n))
+      (h : Proof Γ $ [train W b] (list lφ)) 
+        : Proof Γ $ list $ layer_activation_form b W lφ
     | N₂ { Γ } { n : Nat } { lφ : List (form σ) } { X : List (nominal σ)} { ln : sort σ }
       (h : Proof Γ $ foldr (fun φ ψ => φ ⋀ ψ) (lφ.get! 0) $ map (fun i => @@(X.get! i),ln:lφ.get! i) (range n) )
       : Proof Γ $ list lφ →L list (map (fun i => nomToForm $ X.get! i) (range n))
+    | N₃ { Γ } {n m k : Nat} {lφ : List $ form σ} {W : Vector (Matrix Float n m) k} {b : Vector Float k} {ν : form σ} {ln : sort σ } {y ε η : Float}
+      (h₀ : Proof Γ $ ([compose_trains k W b]ν) →L (list lφ))
+      (h₁ : Proof Γ $ ¬L @@(#n 1),ln:((dL (nomToForm (#γ y)) (foldr (fun φ ψ => φ ⋁ ψ) (zL) lφ)) →L (nomToForm (#γ ε))))
+      : Proof Γ $ [update η W b]ν 
+    | N₄ { Γ } {n m k : Nat} {lφ : List $ form σ} {W : Vector (Matrix Float n m) k} {b : Vector Float k} {ν : form σ} {ln : sort σ } {y ε η : Float}
+      (h₀ : Proof Γ $ ([compose_trains k W b]ν) →L (list lφ))
+      (h₁ : Proof Γ $ @@(#n 1),ln:((dL (nomToForm (#γ y)) (foldr (fun φ ψ => φ ⋁ ψ) (zL) lφ)) →L (nomToForm (#γ ε))))
+      : Proof Γ $ [stop W b]((#p 0) ⋁ ¬L(#p 0))
+    | N₅ { Γ } {n m k : Nat} {lφ : List $ form σ} {W : Vector (Matrix Float n m) k} {b : Vector Float k} {ν : form σ} {ln : sort σ } {y ε η : Float}
+      (h : Proof Γ $ [update η W b]ν)
+      : Proof Γ $ [compose_trains k W b]ν 
+    | I { Γ } {n k : Nat} {W : Vector (Matrix Float n m) k} {b : Vector Float k} (lh : Vector Float n)
+      : Proof Γ $ [compose_trains k W b](list $ map (fun h => nomToForm (#γ h)) (vector2list lh))
+    | I_mem { Γ } {n k : Nat} {W : Vector (Matrix Float n m) k} {b : Vector Float k} (lh : Vector Float n)
+      : Proof Γ $ [compose_trains k W b] ⟪zL, (list $ map (fun h => nomToForm (#γ h)) (vector2list lh))⟫
+    | N₃_mem { Γ } {n m k : Nat} {lφ : List $ form σ} {W : Vector (Matrix Float n m) k} {b : Vector Float k} {ν : form σ} {ln : sort σ } {y ε η : Float}
+      {m : form σ } {E : Float}
+      (h₀ : Proof Γ $ ([compose_trains k W b] ⟪m, ν⟫) →L (list lφ))
+      (h₁ : Proof Γ $ (@@(#n 1),ln:dL m (nomToForm (#γ ((E - 1)/E)))) ⋀ ¬L @@(#n 1),ln:((dL (nomToForm (#γ y)) (foldr (fun φ ψ => φ ⋁ ψ) (zL) lφ)) →L (nomToForm (#γ ε))))
+      : Proof Γ $ [update η W b] ⟪m ⊕ nomToForm (#γ 1/E), ν⟫ 
+    | N₃'_mem { Γ } {n m k : Nat} {lφ : List $ form σ} {W : Vector (Matrix Float n m) k} {b : Vector Float k} {ν : form σ} {ln : sort σ } {y ε η : Float}
+      {m : form σ } {E : Float}
+      (h₀ : Proof Γ $ ([compose_trains k W b] ⟪m, ν⟫) →L (list lφ))
+      (h₁ : Proof Γ $ ¬L @@(#n 1),ln:((dL (nomToForm (#γ y)) (foldr (fun φ ψ => φ ⋁ ψ) (zL) lφ)) →L (nomToForm (#γ ε))))
+      : Proof Γ $ [stop W b] ⟪nomToForm $ #γ 1, (#p 0) ⋀ ¬L(#p 0)⟫ 
+    | N₄_mem { Γ } {n m k : Nat} {lφ : List $ form σ} {W : Vector (Matrix Float n m) k} {b : Vector Float k} {ν : form σ} {ln : sort σ } {y ε η : Float}
+      {m : form σ}
+      (h₀ : Proof Γ $ ([compose_trains k W b] ⟪m, ν⟫) →L (list lφ))
+      (h₁ : Proof Γ $ @@(#n 1),ln:((dL (nomToForm (#γ y)) (foldr (fun φ ψ => φ ⋁ ψ) (zL) lφ)) →L (nomToForm (#γ ε))))
+      : Proof Γ $ [stop W b] ⟪m, ((#p 0) ⋁ ¬L(#p 0))⟫
+    | N₅_mem { Γ } {n m k : Nat} {lφ : List $ form σ} {W : Vector (Matrix Float n m) k} {b : Vector Float k} {ν : form σ} {ln : sort σ } {y ε η : Float} {m : form σ}
+      (h : Proof Γ $ [update η W b] ⟪m, ν⟫)
+      : Proof Γ $ [compose_trains k W b] ⟪zL, ν⟫
+      
+    notation Γ " ⊢ " φ => Proof Γ φ 
 
-    notation Γ " ⊢ " p => Proof Γ p 
+    theorem φ_provable_by_φ {φ : form σ} [Inhabited $ form σ] [Inhabited $ nominal σ] [OfNat (Fin σ) 0] : (Set.cons φ (Set.nil)) ⊢ φ := by 
+      have h : φ ∈₁ (Set.cons φ (Set.nil)) := by 
+        have hself := Set.mem_cons_self φ (Set.nil)
+        exact hself 
+      exact Proof.ax h
+
+    theorem training_continuation {n m k : Nat} {η ε E : Float} {W : Vector (Matrix Float n m) k} {b : Vector Float k} {mem : form σ} { Γ : ctx σ } 
+      [Inhabited $ form σ] [Inhabited $ nominal σ] [OfNat (Fin σ) 0]
+      : (([compose_trains k W b] ⟪mem, ν⟫) ∈₁ Γ)
+      → (Γ ⊢ ([compose_trains k W b] ⟪mem, ν⟫) →L ([update η W b] ⟪ mem ⊕ nomToForm (#γ (1/E)), ν⟫))
+      → (Γ ⊢ (dL (mem ⊕ nomToForm (#γ (1/E))) (nomToForm (#γ 1))) →L (nomToForm (#γ 1))) := by 
+        intros train_in_gamma h 
+        have hΓ : Γ ⊢ ([compose_trains k W b] ⟪mem, ν⟫) := Proof.ax train_in_gamma 
+        have hUpdate : Γ ⊢ ([update η W b] ⟪ mem ⊕ nomToForm (#γ (1/E)), ν⟫) := Proof.MP hΓ h 
+        apply N₃_mem  
+        
 
   end ManySortedHybridLogic 
-    def w1 : Matrix Float 5 3 := 
-      fun i => match i with 
-        | ⟨0, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 0.9811 | ⟨1, _⟩ => 0.3531 | ⟨2, _⟩ => 0.1121
-        | ⟨1, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 0.4517 | ⟨1, _⟩ => 0.6646 | ⟨2, _⟩ => 0.2132
-        | ⟨2, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 0.5921 | ⟨1, _⟩ => 0.3788 | ⟨2, _⟩ => 0.1211
-        | ⟨3, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 0.1891 | ⟨1, _⟩ => 0.4145 | ⟨2, _⟩ => 0.1213
-        | ⟨4, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 0.6381 | ⟨1, _⟩ => 0.1213 | ⟨2, _⟩ => 0.3121
 
-    def w2 : Matrix Float 2 5 := 
-      fun i => match i with 
-        | ⟨0, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 0.1424 | ⟨1, _⟩ => 0.2341 | ⟨2, _⟩ => 0.1131 | ⟨3, _⟩ => 0.3122 | ⟨4, _⟩ => 0.5412
-        | ⟨1, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 0.1212 | ⟨1, _⟩ => 0.5671 | ⟨2, _⟩ => 0.8181 | ⟨3, _⟩ => 0.7671 | ⟨4, _⟩ => 0.3119
 
-    def w3 : Matrix Float 1 2 :=
-      fun i => match i with 
-        | ⟨0, _⟩ => fun j => match j with
-            | ⟨0, _⟩ => 0.7172
-            | ⟨1, _⟩ => 0.1231
+section Example4 
+  open form 
+  open nominal 
 
-    def Q : Matrix Float 4 3 := 
-      fun i => match i with 
-        | ⟨0, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 0 | ⟨1, _⟩ => 0 | ⟨2, _⟩ => 1
-        | ⟨1, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 1 | ⟨1, _⟩ => 0 | ⟨2, _⟩ => 1
-        | ⟨2, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 0 | ⟨1, _⟩ => 1 | ⟨2, _⟩ => 0
-        | ⟨3, _⟩ => fun j => match j with
-          | ⟨0, _⟩ => 1 | ⟨1, _⟩ => 1 | ⟨2, _⟩ => 1
+  def w_list := [[0.01], [0.3]]
+  def w_matrix : Matrix Float 2 1 := list2matrix w_list 2 1 (by rfl)
+  def bias : Float := 0.12
+  def lφ : List $ form σ := [nomToForm (#γ 2.3), zL]
 
-    def ReLU₁ (x : Float) : Float := min 1 $ max 0 x
-    def ReLU₁' (x : Float) : Float := 
-      if x < 0 
-        then 0 
-      else if x < 1 
-          then 1 
-          else 0
 
-    #check ((fun x => min 1 $ max 0 x) <$>M Q ×M T(w1))
-    #check ((fun x => min 1 $ max 0 x) <$>M ((fun x => min 1 $ max 0 x) <$>M Q ×M T(w1)) ×M T(w2)) 
-    #check 
-      ((fun x => ReLU₁ x) <$>M 
-        ((fun x => ReLU₁ x) <$>M 
-          ((fun x => ReLU₁ x) <$>M 
-            Q 
-          ×M T(w1)) 
-        ×M T(w2)) 
-      ×M T(w3)) 
+  def pred_y : form σ := getSome ((layer_activation_form bias w_matrix lφ).get? 0)
 
-    #eval (BackwardPropagation ((fun x => ReLU₁ x) <$>M 
-          ((fun x => ReLU₁ x) <$>M 
-            Q 
-          ×M T(w1)) 
-        ×M T(w2)) w3 ReLU₁') [1,0] 
+  #eval pred_y 
+  #eval evalForm pred_y 
+  #eval evalForm $ (dL pred_y (nomToForm $ #γ 0.01)) →L (nomToForm $ #γ 0.01) 
 
-  section MLPExample
 
-  end MLPExample 
+end Example4 
+
 end Lukasiewicz
