@@ -116,6 +116,7 @@ section Lukasiewicz
     --   else
     --     none
 
+      -- it is left with sorry so that it is not necessary to write the hypothesis with i < n everytime
       def index {α : Type} (v : Vector α n) (i : Nat) : α := v ⟨i, by sorry ⟩
 
 
@@ -265,6 +266,16 @@ section Lukasiewicz
 
       #check [Vector Nat 2, Vector Nat 3]
       #eval List.get! [1,2,3] 1
+
+
+      def random_list [HDiv Nat Nat $ IO Nat] (size : Nat) : IO (List Float) :=
+        let rec loop (n : Nat) (acc : List Float) : IO (List Float) :=
+          if n = 0 then
+            return acc
+          else do
+            let r ← IO.rand 0 100
+            loop (n - 1) (List.append [Nat.toFloat (r/100)] acc)
+        loop size []
 
     end Example2
 
